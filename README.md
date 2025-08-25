@@ -144,6 +144,8 @@ Validate code quality:
 python -m pyflakes pdf2mm.py
 ```
 
+See the full user guide (GPU setup, Azure config, GUI usage): [USER_GUIDE.md](USER_GUIDE.md)
+
 Run tests:
 ```bash
 pytest -q
