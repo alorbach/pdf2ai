@@ -88,7 +88,7 @@ class App:
         Entry(frm, textvariable=self.min_cap_len, width=10).grid(row=4, column=3, sticky="w")
 
         Label(frm, text="Lang:").grid(row=5, column=0, sticky=E)
-        Entry(frm, textvariable=self.lang, width=10).grid(row=5, column=1, sticky="w")
+        ttk.Combobox(frm, textvariable=self.lang, values=["eng", "deu"], width=10, state="readonly").grid(row=5, column=1, sticky="w")
 
         Label(frm, text="Config:").grid(row=5, column=2, sticky=E)
         Entry(frm, textvariable=self.config, width=40).grid(row=5, column=3, sticky="we", padx=4)
