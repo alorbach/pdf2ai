@@ -416,19 +416,29 @@ class Row:
     embedding_id: Optional[str]
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "doc_id": self.doc_id,
             "page": self.page,
             "unit": self.unit,
-            "section": self.section,
-            "text": self.text,
-            "spans": self.spans,
-            "image_ref": self.image_ref,
-            "image_bbox": self.image_bbox,
-            "ocr_text": self.ocr_text,
-            "caption": self.caption,
-            "embedding_id": self.embedding_id,
         }
+        if self.section and str(self.section).strip():
+            out["section"] = self.section
+        if self.text and str(self.text).strip():
+            out["text"] = self.text
+        if self.spans:
+            if isinstance(self.spans, list) and len(self.spans) > 0:
+                out["spans"] = self.spans
+        if self.image_ref:
+            out["image_ref"] = self.image_ref
+        if self.image_bbox:
+            out["image_bbox"] = self.image_bbox
+        if self.ocr_text and str(self.ocr_text).strip():
+            out["ocr_text"] = self.ocr_text
+        if self.caption and str(self.caption).strip():
+            out["caption"] = self.caption
+        if self.embedding_id is not None:
+            out["embedding_id"] = self.embedding_id
+        return out
 
 
 def extract_page(
