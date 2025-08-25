@@ -1,0 +1,456 @@
+#!/usr/bin/env python
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import threading
+from pathlib import Path
+from tkinter import BOTH, BOTTOM, END, LEFT, RIGHT, X, Y, Button, Checkbutton, E, Entry, Frame, IntVar, Label, Listbox, N, S, Scrollbar, StringVar, Tk, filedialog, ttk, Text
+import json as _json
+
+try:
+    import fitz  # PyMuPDF
+except Exception:  # pragma: no cover
+    fitz = None
+
+
+APP_TITLE = "pdf2mm Studio"
+
+
+class App:
+    def __init__(self, root: Tk) -> None:
+        self.root = root
+        root.title(APP_TITLE)
+        root.geometry("1000x720")
+        root.minsize(900, 600)
+        # Theme and basic styling
+        self.style = ttk.Style()
+        themes = set(self.style.theme_names())
+        if "vista" in themes:
+            self.style.theme_use("vista")
+        elif "clam" in themes:
+            self.style.theme_use("clam")
+        self.style.configure("TButton", padding=6)
+        self.style.configure("TLabel", padding=2)
+        self.style.configure("TEntry", padding=2)
+
+        self.pdf_path = StringVar()
+        self.out_dir = StringVar(value="")
+        # all formats are produced by CLI; no format selector needed
+        self.ocr = StringVar(value="auto")
+        self.caption_provider = StringVar(value="none")
+        self.embed_provider = StringVar(value="none")
+        self.max_pages = StringVar(value="0")
+        self.min_cap_len = StringVar(value="6")
+        self.lang = StringVar(value="eng")
+        self.config = StringVar(value="")
+        self.proc = None
+
+        self._build_controls()
+        self._build_tabs()
+        self._build_status()
+        self._load_settings()
+
+        # Root should make notebook expand
+        self.root.update_idletasks()
+        self.nb.select(0)
+
+    def _build_controls(self) -> None:
+        frm = ttk.LabelFrame(self.root, text="Options")
+        frm.pack(fill=X, padx=10, pady=6)
+
+        Label(frm, text="PDF:").grid(row=0, column=0, sticky=E)
+        Entry(frm, textvariable=self.pdf_path, width=60).grid(row=0, column=1, sticky="we", padx=4)
+        ttk.Button(frm, text="Browse", command=self.browse_pdf).grid(row=0, column=2)
+
+        Label(frm, text="Out dir:").grid(row=1, column=0, sticky=E)
+        Entry(frm, textvariable=self.out_dir, width=60).grid(row=1, column=1, sticky="we", padx=4)
+        ttk.Button(frm, text="Browse", command=self.browse_out).grid(row=1, column=2)
+
+        # Format selection removed; CLI writes all formats
+
+        Label(frm, text="OCR:").grid(row=2, column=2, sticky=E)
+        ttk.Combobox(frm, textvariable=self.ocr, values=["auto", "yes", "no"], width=10).grid(row=2, column=3, sticky="w", padx=4)
+
+        Label(frm, text="Caption:").grid(row=3, column=0, sticky=E)
+        ttk.Combobox(frm, textvariable=self.caption_provider, values=["none", "openai", "blip"], width=15).grid(row=3, column=1, sticky="w", padx=4)
+
+        Label(frm, text="Embed:").grid(row=3, column=2, sticky=E)
+        ttk.Combobox(frm, textvariable=self.embed_provider, values=["none", "openai", "hf"], width=10).grid(row=3, column=3, sticky="w", padx=4)
+
+        Label(frm, text="Max pages:").grid(row=4, column=0, sticky=E)
+        Entry(frm, textvariable=self.max_pages, width=10).grid(row=4, column=1, sticky="w")
+
+        Label(frm, text="Min cap len:").grid(row=4, column=2, sticky=E)
+        Entry(frm, textvariable=self.min_cap_len, width=10).grid(row=4, column=3, sticky="w")
+
+        Label(frm, text="Lang:").grid(row=5, column=0, sticky=E)
+        ttk.Combobox(frm, textvariable=self.lang, values=["eng", "deu"], width=10, state="readonly").grid(row=5, column=1, sticky="w")
+
+        Label(frm, text="Config:").grid(row=5, column=2, sticky=E)
+        Entry(frm, textvariable=self.config, width=40).grid(row=5, column=3, sticky="we", padx=4)
+        ttk.Button(frm, text="Browse", command=self.browse_config).grid(row=5, column=4)
+
+        ttk.Button(frm, text="Load PDF", command=self.load_pdf).grid(row=6, column=0, pady=6)
+        self.run_btn = ttk.Button(frm, text="Run", command=self.run_pipeline)
+        self.run_btn.grid(row=6, column=1, pady=6, sticky="w")
+        self.cancel_btn = ttk.Button(frm, text="Cancel", command=self.cancel_run, state="disabled")
+        self.cancel_btn.grid(row=6, column=2, pady=6, sticky="w")
+        self.config_btn = ttk.Button(frm, text="Config…", command=self.edit_config)
+        self.config_btn.grid(row=6, column=3, pady=6, sticky="w")
+
+        frm.grid_columnconfigure(1, weight=1)
+        frm.grid_columnconfigure(3, weight=1)
+
+    def _build_tabs(self) -> None:
+        self.nb = ttk.Notebook(self.root)
+        self.nb.pack(fill=BOTH, expand=True)
+
+        # Debug tab (default)
+        self.tab_debug = ttk.Frame(self.nb)
+        self.nb.add(self.tab_debug, text="Debug")
+        self.tab_debug.rowconfigure(0, weight=1)
+        self.tab_debug.columnconfigure(0, weight=1)
+        self.debug_area = Text(self.tab_debug, wrap="none")
+        self.debug_area.grid(row=0, column=0, sticky="nsew")
+        dbg_y = ttk.Scrollbar(self.tab_debug, orient="vertical", command=self.debug_area.yview)
+        dbg_y.grid(row=0, column=1, sticky="ns")
+        self.debug_area.configure(yscrollcommand=dbg_y.set)
+
+        # PDF preview
+        self.tab_pdf = ttk.Frame(self.nb)
+        self.nb.add(self.tab_pdf, text="PDF Preview")
+        self.tab_pdf.rowconfigure(0, weight=1)
+        self.tab_pdf.columnconfigure(0, weight=0)
+        self.tab_pdf.columnconfigure(1, weight=0)
+        self.tab_pdf.columnconfigure(2, weight=1)
+        self.preview_list = Listbox(self.tab_pdf)
+        self.preview_list.grid(row=0, column=0, sticky="ns")
+        list_scroll = ttk.Scrollbar(self.tab_pdf, orient="vertical", command=self.preview_list.yview)
+        list_scroll.grid(row=0, column=1, sticky="ns")
+        self.preview_list.configure(yscrollcommand=list_scroll.set)
+        self.preview_list.bind("<<ListboxSelect>>", self.on_page_select)
+        self.canvas = ttk.Label(self.tab_pdf)
+        self.canvas.grid(row=0, column=2, sticky="nsew")
+        self.canvas.bind("<Configure>", self._rescale_current_page)
+        self.current_page_idx = None
+
+        # Text preview
+        self.tab_text = ttk.Frame(self.nb)
+        self.nb.add(self.tab_text, text="Output Preview")
+        self.tab_text.rowconfigure(0, weight=1)
+        self.tab_text.columnconfigure(0, weight=1)
+        self.text_area = Text(self.tab_text, wrap="word")
+        self.text_area.grid(row=0, column=0, sticky="nsew")
+        text_scroll = ttk.Scrollbar(self.tab_text, orient="vertical", command=self.text_area.yview)
+        text_scroll.grid(row=0, column=1, sticky="ns")
+        self.text_area.configure(yscrollcommand=text_scroll.set)
+
+    def _build_status(self) -> None:
+        bar = ttk.Frame(self.root)
+        bar.pack(fill=X, padx=10, pady=(0, 8))
+        self.progress = ttk.Progressbar(bar, mode="indeterminate")
+        self.progress.pack(side=LEFT, fill=X, expand=True)
+        self.status_label = ttk.Label(bar, text="Ready")
+        self.status_label.pack(side=RIGHT)
+
+    def _settings_path(self) -> Path:
+        return Path.home() / ".pdf2mm_gui.json"
+
+    def _load_settings(self) -> None:
+        try:
+            p = self._settings_path()
+            if p.exists():
+                data = _json.loads(p.read_text(encoding="utf-8"))
+                self.pdf_path.set(data.get("pdf_path", ""))
+                self.out_dir.set(data.get("out_dir", ""))
+                # no format in settings anymore
+                self.ocr.set(data.get("ocr", "auto"))
+                self.caption_provider.set(data.get("caption_provider", "none"))
+                self.embed_provider.set(data.get("embed_provider", "none"))
+                self.max_pages.set(str(data.get("max_pages", "0")))
+                self.min_cap_len.set(str(data.get("min_cap_len", "6")))
+                self.lang.set(data.get("lang", "eng"))
+                self.config.set(data.get("config", ""))
+        except Exception:
+            pass
+
+    def _save_settings(self) -> None:
+        try:
+            data = {
+                "pdf_path": self.pdf_path.get(),
+                "out_dir": self.out_dir.get(),
+                # no format persisted
+                "ocr": self.ocr.get(),
+                "caption_provider": self.caption_provider.get(),
+                "embed_provider": self.embed_provider.get(),
+                "max_pages": self.max_pages.get(),
+                "min_cap_len": self.min_cap_len.get(),
+                "lang": self.lang.get(),
+                "config": self.config.get(),
+            }
+            self._settings_path().write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+
+    def browse_pdf(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")])
+        if path:
+            self.pdf_path.set(path)
+            try:
+                default_out = str(Path(path).resolve().parent / "out")
+                self.out_dir.set(default_out)
+            except Exception:
+                pass
+
+    def browse_out(self) -> None:
+        path = filedialog.askdirectory()
+        if path:
+            self.out_dir.set(path)
+
+    def browse_config(self) -> None:
+        path = filedialog.askopenfilename(filetypes=[("YAML", "*.yaml;*.yml"), ("All files", "*.*")])
+        if path:
+            self.config.set(path)
+
+    def load_pdf(self) -> None:
+        if not fitz:
+            self.text_area.insert(END, "PyMuPDF not installed; PDF preview disabled.\n")
+            return
+        path = self.pdf_path.get()
+        if not path:
+            return
+        try:
+            self.doc = fitz.open(path)
+        except Exception as exc:  # pragma: no cover
+            self.text_area.insert(END, f"Failed to open PDF: {exc}\n")
+            return
+        self.preview_list.delete(0, END)
+        for i in range(self.doc.page_count):
+            self.preview_list.insert(END, f"Page {i+1}")
+        if self.doc.page_count > 0:
+            self.preview_list.select_set(0)
+            self.on_page_select()
+
+    def on_page_select(self, event=None) -> None:
+        if not hasattr(self, "doc"):
+            return
+        sel = self.preview_list.curselection()
+        if not sel:
+            return
+        self.current_page_idx = sel[0]
+        self._render_page_to_canvas()
+
+    def _rescale_current_page(self, event=None) -> None:
+        # Re-render on canvas resize
+        if self.current_page_idx is not None:
+            self._render_page_to_canvas()
+
+    def _render_page_to_canvas(self) -> None:
+        if not hasattr(self, "doc") or self.current_page_idx is None:
+            return
+        page = self.doc.load_page(self.current_page_idx)
+        # Determine zoom to fit canvas area
+        canvas_w = max(self.canvas.winfo_width(), 200)
+        canvas_h = max(self.canvas.winfo_height(), 200)
+        rect = page.rect
+        zx = canvas_w / max(rect.width, 1)
+        zy = canvas_h / max(rect.height, 1)
+        zoom = max(0.5, min(zx, zy))
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+        from PIL import Image, ImageTk  # lazy
+        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        self.tk_img = ImageTk.PhotoImage(img)
+        self.canvas.configure(image=self.tk_img)
+
+    def run_pipeline(self) -> None:
+        # assemble args
+        cmd = [sys.executable, str(Path(__file__).with_name("pdf2mm.py"))]
+        if self.pdf_path.get():
+            cmd += ["--pdf", self.pdf_path.get()]
+        # Default outdir to PDF folder + /out if not set
+        outdir_val = self.out_dir.get()
+        if not outdir_val and self.pdf_path.get():
+            try:
+                outdir_val = str(Path(self.pdf_path.get()).resolve().parent / "out")
+                self.out_dir.set(outdir_val)
+            except Exception:
+                outdir_val = str(Path.cwd() / "out")
+                self.out_dir.set(outdir_val)
+        if outdir_val:
+            cmd += ["--outdir", outdir_val]
+        # --format deprecated; CLI writes all formats
+        cmd += ["--ocr", self.ocr.get() or "auto"]
+        cmd += ["--caption-provider", self.caption_provider.get() or "none"]
+        cmd += ["--embed-provider", self.embed_provider.get() or "none"]
+        cmd += ["--max-pages", self.max_pages.get() or "0"]
+        cmd += ["--min-cap-len", self.min_cap_len.get() or "6"]
+        if self.lang.get():
+            cmd += ["--lang", self.lang.get()]
+        if self.config.get():
+            cmd += ["--config", self.config.get()]
+
+        # Run in background to keep UI responsive
+        def _run():
+            try:
+                self.set_running(True)
+                self.status_label.config(text="Processing…")
+                self.progress.configure(mode="indeterminate")
+                self.progress.start(10)
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    env=env,
+                )
+
+                stdout_buf: list[str] = []
+                stderr_buf: list[str] = []
+
+                def reader(stream, prefix, store):
+                    for line in iter(stream.readline, ""):
+                        store.append(line)
+                        self.root.after(0, lambda ln=line: self._append_debug(prefix + ln))
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+                t_out = threading.Thread(target=reader, args=(self.proc.stdout, "", stdout_buf), daemon=True)
+                t_err = threading.Thread(target=reader, args=(self.proc.stderr, "", stderr_buf), daemon=True)
+                t_out.start(); t_err.start()
+                ret = self.proc.wait()
+                t_out.join(timeout=0.2); t_err.join(timeout=0.2)
+
+                def _update_preview():
+                    # Load output preview (first few JSONL rows)
+                    outdir = Path(self.out_dir.get())
+                    doc_stem = Path(self.pdf_path.get()).stem if self.pdf_path.get() else None
+                    jsonl_path = outdir / (f"{doc_stem}.jsonl" if doc_stem else "data.jsonl")
+                    self.text_area.delete("1.0", END)
+                    if jsonl_path.exists():
+                        lines = jsonl_path.read_text(encoding="utf-8").splitlines()[:50]
+                        for ln in lines:
+                            try:
+                                obj = json.loads(ln)
+                                unit = obj.get("unit")
+                                page = obj.get("page")
+                                text = obj.get("text") or obj.get("caption") or ""
+                                text = (text[:200] + "…") if len(text) > 200 else text
+                                self.text_area.insert(END, f"p{page} [{unit}] {text}\n")
+                            except Exception:
+                                self.text_area.insert(END, ln + "\n")
+                    else:
+                        fallback = "".join(stderr_buf) or "".join(stdout_buf) or "No output produced"
+                        self.text_area.insert(END, fallback)
+                    self.status_label.config(text=f"Done (exit {ret})")
+                    # Show full progress bar when finished
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", maximum=100, value=100)
+
+                self.root.after(0, _update_preview)
+            except Exception as exc:  # pragma: no cover
+                def _err():
+                    self.text_area.insert(END, f"Run failed: {exc}\n")
+                    self.status_label.config(text="Error")
+                self.root.after(0, _err)
+            finally:
+                self.root.after(0, self._stop_running)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def set_running(self, running: bool) -> None:
+        self.run_btn.config(state="disabled" if running else "normal")
+        self.cancel_btn.config(state="normal" if running else "disabled")
+
+    def _stop_running(self) -> None:
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
+        self.set_running(False)
+        self.proc = None
+
+    def cancel_run(self) -> None:
+        if self.proc and self.proc.poll() is None:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+            self.status_label.config(text="Canceled")
+            try:
+                self.progress.stop()
+                self.progress.configure(mode="determinate", maximum=100, value=0)
+            except Exception:
+                pass
+
+    def _append_debug(self, text: str) -> None:
+        self.debug_area.insert(END, text)
+        self.debug_area.see(END)
+
+    def edit_config(self) -> None:
+        # Open a simple JSON editor for OpenAI/Azure configuration
+        top = ttk.Toplevel(self.root)
+        top.title("Configuration (config.json)")
+        top.geometry("700x500")
+        txt = Text(top, wrap="none")
+        txt.pack(fill=BOTH, expand=True)
+
+        # Load current YAML and env-driven OpenAI config as JSON skeleton
+        cfg_path = Path(self.config.get()) if self.config.get() else None
+        initial = {
+            "openai": {
+                "api_key_env": "OPENAI_API_KEY",
+                "base_url": None,
+                "azure_use": False,
+                "azure_endpoint": None,
+                "azure_deployment": None,
+                "azure_embed_deployment": None,
+                "azure_api_version": "2024-02-15-preview",
+            }
+        }
+        try:
+            txt.insert(END, _json.dumps(initial, indent=2))
+        except Exception:
+            pass
+
+        btns = ttk.Frame(top)
+        btns.pack(fill=X)
+        def _save():
+            try:
+                obj = _json.loads(txt.get("1.0", END))
+                # Save next to selected config path or in project root as config.json
+                target = Path("configs/config.json")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(_json.dumps(obj, indent=2), encoding="utf-8")
+                self._append_debug(f"Saved config to {target}\n")
+            except Exception as exc:
+                self._append_debug(f"Failed to save config: {exc}\n")
+        ttk.Button(btns, text="Save", command=_save).pack(side=RIGHT, padx=8, pady=6)
+
+    def on_close(self) -> None:
+        self._save_settings()
+        self.root.destroy()
+
+
+def main() -> int:
+    root = Tk()
+    app = App(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.mainloop()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+

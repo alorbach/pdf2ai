@@ -1,0 +1,12 @@
+language: "de"
+caption_provider: "openai"
+caption_model: "gpt-4o-mini"
+embed_provider: "hf"
+embed_model: "sentence-transformers/all-MiniLM-L6-v2"
+max_pages: 0
+min_caption_len: 6
+ocr: "auto"
+openai:
+  api_key_env: "OPENAI_API_KEY"
+  base_url: null
+
