@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+#
+# pdf2mm runner script
+# Author: Andre Lorbach <alorbach@adiscon.com>
+# Copyright (c) 2025 Andre Lorbach
+# License: MIT
+#
+# This code was created using AI Agent Models and human code oversight.
+#
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"

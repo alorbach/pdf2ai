@@ -151,6 +151,16 @@ Run tests:
 pytest -q
 ```
 
+### Author
+
+**Andre Lorbach**  
+Email: [alorbach@adiscon.com](mailto:alorbach@adiscon.com)  
+Software Developer since 1999
+
+This code was created using AI Agent Models and human code oversight.
+
+The goal is to create a utility that can convert PDF Documents with images to a better understandable version, suited to work better for AI Agent Tasks.
+
 ### License
 
 MIT (see `LICENSE`).

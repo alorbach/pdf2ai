@@ -1,3 +1,14 @@
+"""
+Smoke tests for pdf2mm
+
+Author: Andre Lorbach <alorbach@adiscon.com>
+Copyright (c) 2025 Andre Lorbach
+Software Developer since 1999
+
+This code was created using AI Agent Models and human code oversight.
+
+License: MIT
+"""
 import io
 import json
 import os
