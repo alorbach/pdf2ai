@@ -40,6 +40,8 @@ class RuntimeConfig(BaseModel):
     caption_model: str = "gpt-4o-mini"
     embed_provider: str = "none"  # openai|hf|none
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    page_vision_provider: str = "none"  # openai|none
+    image_vision_provider: str = "none"  # openai|none
     max_pages: int = 0
     min_caption_len: int = 6
     ocr: str = "auto"  # auto|yes|no
@@ -71,7 +73,9 @@ def ensure_out_dirs(outdir: Path) -> Dict[str, Path]:
     images_dir.mkdir(parents=True, exist_ok=True)
     embeds_dir = outdir / "embeddings"
     embeds_dir.mkdir(parents=True, exist_ok=True)
-    return {"images": images_dir, "embeddings": embeds_dir}
+    tables_dir = outdir / "tables"
+    tables_dir.mkdir(parents=True, exist_ok=True)
+    return {"images": images_dir, "embeddings": embeds_dir, "tables": tables_dir}
 
 
 def output_paths(outdir: Path, doc_id: str) -> Dict[str, Path]:
@@ -237,6 +241,99 @@ def batched(iterable: Iterable[Any], batch_size: int) -> Iterable[List[Any]]:
             batch = []
     if batch:
         yield batch
+# ---------- Vision Helpers ----------
+
+
+def render_page_image(page: fitz.Page, max_px: int = 1600) -> Image.Image:
+    rect = page.rect
+    scale = max_px / max(rect.width, rect.height)
+    scale = max(0.5, min(2.0, scale))
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale))
+    pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    return pil
+
+
+def analyze_page_openai(pil_img: Image.Image, openai_cfg: OpenAIConfig) -> Optional[str]:
+    try:
+        import requests
+
+        if openai_cfg.azure_use and openai_cfg.azure_endpoint and openai_cfg.azure_deployment:
+            url = (
+                f"{openai_cfg.azure_endpoint}/openai/deployments/{openai_cfg.azure_deployment}/chat/completions"
+                f"?api-version={openai_cfg.azure_api_version}"
+            )
+            headers = {"api-key": os.getenv(openai_cfg.api_key_env, ""), "Content-Type": "application/json"}
+            model = None
+        else:
+            base_url = openai_cfg.base_url or "https://api.openai.com/v1"
+            url = base_url + "/chat/completions"
+            headers = {"Authorization": f"Bearer {os.getenv(openai_cfg.api_key_env, '')}", "Content-Type": "application/json"}
+            model = "gpt-4o-mini"
+
+        b64 = image_to_base64(pil_img)
+        system = (
+            "You are a document layout analyst. Return a concise JSON with keys: headings (array),"
+            " lists (array of strings), tables (array of {summary, csv?}), figures (array of captions),"
+            " notes (string). Avoid opinions; be factual."
+        )
+        prompt = "Analyze the page and return JSON only. If you include CSV, keep it small."
+        payload = {
+            "model": model or "",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": [{"type": "text", "text": prompt}, {"type": "image_url", "image_url": {"url": b64}}]},
+            ],
+            "temperature": 0.1,
+            "max_tokens": 400,
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["choices"][0]["message"]["content"].strip()
+        return text
+    except Exception as exc:  # pragma: no cover
+        logging.warning("Page vision failed: %s", exc)
+        return None
+
+
+def analyze_image_openai(pil_img: Image.Image, openai_cfg: OpenAIConfig) -> Optional[str]:
+    try:
+        import requests
+
+        if openai_cfg.azure_use and openai_cfg.azure_endpoint and openai_cfg.azure_deployment:
+            url = (
+                f"{openai_cfg.azure_endpoint}/openai/deployments/{openai_cfg.azure_deployment}/chat/completions"
+                f"?api-version={openai_cfg.azure_api_version}"
+            )
+            headers = {"api-key": os.getenv(openai_cfg.api_key_env, ""), "Content-Type": "application/json"}
+            model = None
+        else:
+            base_url = openai_cfg.base_url or "https://api.openai.com/v1"
+            url = base_url + "/chat/completions"
+            headers = {"Authorization": f"Bearer {os.getenv(openai_cfg.api_key_env, '')}", "Content-Type": "application/json"}
+            model = "gpt-4o-mini"
+
+        b64 = image_to_base64(pil_img)
+        system = (
+            "Describe key visual elements as JSON with keys: objects (array of nouns), visual_notes (string)."
+            " No opinions. Be concise."
+        )
+        payload = {
+            "model": model or "",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": [{"type": "image_url", "image_url": {"url": b64}}]},
+            ],
+            "temperature": 0.1,
+            "max_tokens": 200,
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=60)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
+    except Exception as exc:  # pragma: no cover
+        logging.warning("Image vision failed: %s", exc)
+        return None
 
 
 # ---------- Core Extraction ----------
@@ -277,12 +374,15 @@ def extract_page(
     page_index_zero: int,
     doc_id: str,
     images_dir: Path,
+    tables_dir: Path,
     ocr_mode: str,
     ocr_lang: str,
     caption_provider: str,
     caption_model: str,
     openai_cfg: OpenAIConfig,
     min_caption_len: int,
+    page_vision_provider: str,
+    image_vision_provider: str,
 ) -> Tuple[List[Row], List[Tuple[int, str]]]:
     page = doc.load_page(page_index_zero)
     page_num = page_index_zero + 1
@@ -390,12 +490,17 @@ def extract_page(
             if (not caption or len(caption) < min_caption_len) and ocr_text:
                 caption = normalize_text(ocr_text[:160])
 
+            # Optional image-level vision analysis
+            vision_json: Optional[str] = None
+            if image_vision_provider == "openai":
+                vision_json = analyze_image_openai(pil_img, openai_cfg)
+
             row = Row(
                 doc_id=doc_id,
                 page=page_num,
                 unit="image",
                 section=current_section,
-                text=None,
+                text=vision_json,
                 spans=None,
                 image_ref=str(Path("images") / image_name),
                 image_bbox=[float(v) for v in bbox] if bbox else None,
@@ -429,6 +534,30 @@ def extract_page(
                 embedding_id=None,
             )
         )
+
+    # Optional page-level vision analysis
+    if page_vision_provider == "openai":
+        try:
+            pil_page = render_page_image(page)
+            vision_text = analyze_page_openai(pil_page, openai_cfg)
+        except Exception:
+            vision_text = None
+        if vision_text:
+            rows.append(
+                Row(
+                    doc_id=doc_id,
+                    page=page_num,
+                    unit="page_vision",
+                    section=None,
+                    text=vision_text,
+                    spans=None,
+                    image_ref=None,
+                    image_bbox=None,
+                    ocr_text=None,
+                    caption=None,
+                    embedding_id=None,
+                )
+            )
 
     return rows, embeds
 
@@ -538,6 +667,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--ocr", default="auto", choices=["auto", "yes", "no"], help="OCR mode for images")
     p.add_argument("--caption-provider", default="none", choices=["openai", "blip", "none"], help="Image captioning provider")
     p.add_argument("--embed-provider", default="none", choices=["openai", "hf", "none"], help="Embedding provider")
+    p.add_argument("--page-vision-provider", default="none", choices=["openai", "none"], help="Page-level vision analysis provider")
+    p.add_argument("--image-vision-provider", default="none", choices=["openai", "none"], help="Image-level vision analysis provider")
     p.add_argument("--max-pages", type=int, default=0, help="Max pages to process (0 = all)")
     p.add_argument("--min-cap-len", type=int, default=6, help="Minimum caption length before falling back to OCR text")
     p.add_argument("--lang", default=None, help="Language code for OCR (e.g., eng, deu)")
@@ -564,6 +695,8 @@ def load_config(cli_args: argparse.Namespace) -> RuntimeConfig:
         cfg.language = cli_args.lang
     cfg.caption_provider = cli_args.caption_provider
     cfg.embed_provider = cli_args.embed_provider
+    cfg.page_vision_provider = getattr(cli_args, "page_vision_provider", cfg.page_vision_provider)
+    cfg.image_vision_provider = getattr(cli_args, "image_vision_provider", cfg.image_vision_provider)
     cfg.max_pages = cli_args.max_pages
     cfg.min_caption_len = cli_args.min_cap_len
     cfg.ocr = cli_args.ocr
@@ -615,12 +748,15 @@ def main() -> int:
             page_index_zero=page_idx,
             doc_id=doc_id,
             images_dir=dirs["images"],
+            tables_dir=dirs["tables"],
             ocr_mode=cfg.ocr,
             ocr_lang=cfg.language,
             caption_provider=cfg.caption_provider,
             caption_model=cfg.caption_model,
             openai_cfg=cfg.openai,
             min_caption_len=cfg.min_caption_len,
+            page_vision_provider=cfg.page_vision_provider,
+            image_vision_provider=cfg.image_vision_provider,
         )
         embeds_offset = len(rows)
         rows.extend(page_rows)
