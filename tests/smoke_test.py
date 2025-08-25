@@ -31,7 +31,7 @@ def test_smoke(tmp_path: Path):
     proc = subprocess.run(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.returncode == 0, proc.stderr
 
-    jsonl = outdir / "data.jsonl"
+    jsonl = outdir / f"{pdf.stem}.jsonl"
     assert jsonl.exists(), "data.jsonl not found"
     lines = jsonl.read_text(encoding="utf-8").strip().splitlines()
     assert len(lines) >= 1

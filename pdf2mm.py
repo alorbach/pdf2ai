@@ -68,6 +68,18 @@ def ensure_out_dirs(outdir: Path) -> Dict[str, Path]:
     return {"images": images_dir, "embeddings": embeds_dir}
 
 
+def output_paths(outdir: Path, doc_id: str) -> Dict[str, Path]:
+    """Return standard output file paths using the input basename (doc_id)."""
+    embeds_dir = outdir / "embeddings"
+    return {
+        "jsonl": outdir / f"{doc_id}.jsonl",
+        "yaml": outdir / f"{doc_id}.yaml",
+        "md": outdir / f"{doc_id}.md",
+        "emb_vectors": embeds_dir / f"{doc_id}.vectors.npy",
+        "emb_index": embeds_dir / f"{doc_id}.index.json",
+    }
+
+
 def guess_bold(font_name: str) -> bool:
     name = (font_name or "").lower()
     return "bold" in name or name.endswith("-bd") or name.endswith("-bold")
@@ -424,13 +436,45 @@ def compute_embeddings_hf(texts: List[str], model_name: str) -> np.ndarray:
         return np.zeros((0, 0), dtype=np.float32)
 
 
-def write_embeddings(out_dir: Path, ids: List[str], vectors: np.ndarray) -> None:
+def write_embeddings(vec_path: Path, index_path: Path, ids: List[str], vectors: np.ndarray) -> None:
     if vectors.size == 0 or not ids:
         return
-    embeds_dir = out_dir / "embeddings"
-    embeds_dir.mkdir(parents=True, exist_ok=True)
-    vec_path = embeds_dir / "vectors.npy"
-    index_path = embeds_dir / "index.json"
+    vec_path.parent.mkdir(parents=True, exist_ok=True)
+    np.save(vec_path, vectors)
+    index = {
+        "vector_dim": int(vectors.shape[1]),
+        "count": int(vectors.shape[0]),
+        "ids": ids,
+    }
+    index_path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def build_markdown(rows: List[Row], doc_id: str) -> str:
+    """Render a simple Markdown document from extracted rows."""
+    lines: List[str] = [f"# {doc_id}", ""]
+    last_section: Optional[str] = None
+    for row in rows:
+        if row.unit == "block":
+            # Treat block as heading if it introduces a new section and equals the section text
+            if row.section and row.text and row.text == row.section and row.section != last_section and len(row.text) <= 80:
+                lines.append(f"## {row.section}")
+                lines.append("")
+                last_section = row.section
+                continue
+            if row.text:
+                lines.append(row.text)
+                lines.append("")
+        elif row.unit == "image":
+            alt = row.caption or f"image page {row.page}"
+            if row.image_ref:
+                lines.append(f"![{alt}]({row.image_ref})")
+                lines.append("")
+        elif row.unit == "page_summary":
+            # Optionally include summaries as blockquotes
+            if row.text:
+                lines.append(f"> {row.text}")
+                lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
     np.save(vec_path, vectors)
     index = {
         "vector_dim": int(vectors.shape[1]),
@@ -566,10 +610,12 @@ def main() -> int:
             vectors = compute_embeddings_hf(embedding_texts, cfg.embed_model)
 
         if vectors.size > 0:
-            write_embeddings(out_dir, embedding_ids, vectors)
+            paths = output_paths(out_dir, doc_id)
+            write_embeddings(paths["emb_vectors"], paths["emb_index"], embedding_ids, vectors)
 
     # Always write JSONL
-    jsonl_path = out_dir / "data.jsonl"
+    paths = output_paths(out_dir, doc_id)
+    jsonl_path = paths["jsonl"]
     with jsonl_path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row.to_dict(), ensure_ascii=False) + "\n")
@@ -578,7 +624,7 @@ def main() -> int:
         try:
             import yaml
 
-            yaml_path = out_dir / "data.yaml"
+            yaml_path = paths["yaml"]
             with yaml_path.open("w", encoding="utf-8") as f:
                 # Write as a YAML list of rows
                 yaml.safe_dump([r.to_dict() for r in rows], f, sort_keys=False, allow_unicode=True)
@@ -586,18 +632,10 @@ def main() -> int:
             logging.warning("Failed to write YAML: %s", exc)
 
     if want_md:
-        md_path = out_dir / "notes.md"
+        md_path = paths["md"]
         try:
-            total_images = len([r for r in rows if r.unit == "image"])
-            total_blocks = len([r for r in rows if r.unit == "block"])
-            lines = [
-                f"# Document {doc_id}",
-                "",
-                f"Pages processed: {min(max_pages, doc.page_count)}",
-                f"Text blocks: {total_blocks}",
-                f"Images: {total_images}",
-            ]
-            md_path.write_text("\n".join(lines), encoding="utf-8")
+            md = build_markdown(rows, doc_id)
+            md_path.write_text(md, encoding="utf-8")
         except Exception as exc:  # pragma: no cover
             logging.warning("Failed to write Markdown: %s", exc)
 

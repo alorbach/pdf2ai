@@ -9,10 +9,12 @@ requests==2.32.3
 numpy==2.0.2
 
 # Optional extras (install manually if you enable these providers)
-# sentence-transformers==3.0.1
 # transformers==4.43.3
 
 # Dev/test utilities
 pytest==8.3.2
 pyflakes==3.2.0
+
+# Embeddings (HF)
+sentence-transformers==3.0.1
 

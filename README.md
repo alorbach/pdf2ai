@@ -85,18 +85,18 @@ python pdf2mm.py \
 
 ### Output
 
-Directory structure example:
+Directory structure example (basename = sample):
 ```
 out/
-  data.jsonl
-  data.yaml             # if --format yaml
-  notes.md              # if --format markdown|md
+  sample.jsonl
+  sample.yaml           # if --format yaml
+  sample.md             # if --format markdown|md (full document)
   images/
     page1_img1.png
     page2_img1.png
   embeddings/
-    index.json
-    vectors.npy
+    sample.index.json
+    sample.vectors.npy
 ```
 
 JSONL schema per row:
