@@ -16,7 +16,7 @@ except Exception:  # pragma: no cover
     fitz = None
 
 
-APP_TITLE = "pdf2mm GUI"
+APP_TITLE = "pdf2mm Studio"
 
 
 class App:
@@ -38,7 +38,7 @@ class App:
 
         self.pdf_path = StringVar()
         self.out_dir = StringVar(value="")
-        self.format = StringVar(value="jsonl")
+        # all formats are produced by CLI; no format selector needed
         self.ocr = StringVar(value="auto")
         self.caption_provider = StringVar(value="none")
         self.embed_provider = StringVar(value="none")
@@ -69,8 +69,7 @@ class App:
         Entry(frm, textvariable=self.out_dir, width=60).grid(row=1, column=1, sticky="we", padx=4)
         ttk.Button(frm, text="Browse", command=self.browse_out).grid(row=1, column=2)
 
-        Label(frm, text="Format:").grid(row=2, column=0, sticky=E)
-        ttk.Combobox(frm, textvariable=self.format, values=["jsonl", "yaml", "markdown"], width=15).grid(row=2, column=1, sticky="w", padx=4)
+        # Format selection removed; CLI writes all formats
 
         Label(frm, text="OCR:").grid(row=2, column=2, sticky=E)
         ttk.Combobox(frm, textvariable=self.ocr, values=["auto", "yes", "no"], width=10).grid(row=2, column=3, sticky="w", padx=4)
@@ -167,7 +166,7 @@ class App:
                 data = _json.loads(p.read_text(encoding="utf-8"))
                 self.pdf_path.set(data.get("pdf_path", ""))
                 self.out_dir.set(data.get("out_dir", ""))
-                self.format.set(data.get("format", "jsonl"))
+                # no format in settings anymore
                 self.ocr.set(data.get("ocr", "auto"))
                 self.caption_provider.set(data.get("caption_provider", "none"))
                 self.embed_provider.set(data.get("embed_provider", "none"))
@@ -183,7 +182,7 @@ class App:
             data = {
                 "pdf_path": self.pdf_path.get(),
                 "out_dir": self.out_dir.get(),
-                "format": self.format.get(),
+                # no format persisted
                 "ocr": self.ocr.get(),
                 "caption_provider": self.caption_provider.get(),
                 "embed_provider": self.embed_provider.get(),
@@ -282,7 +281,7 @@ class App:
                 self.out_dir.set(outdir_val)
         if outdir_val:
             cmd += ["--outdir", outdir_val]
-        cmd += ["--format", self.format.get() or "jsonl"]
+        # --format deprecated; CLI writes all formats
         cmd += ["--ocr", self.ocr.get() or "auto"]
         cmd += ["--caption-provider", self.caption_provider.get() or "none"]
         cmd += ["--embed-provider", self.embed_provider.get() or "none"]
@@ -332,7 +331,8 @@ class App:
                 def _update_preview():
                     # Load output preview (first few JSONL rows)
                     outdir = Path(self.out_dir.get())
-                    jsonl_path = outdir / "data.jsonl"
+                    doc_stem = Path(self.pdf_path.get()).stem if self.pdf_path.get() else None
+                    jsonl_path = outdir / (f"{doc_stem}.jsonl" if doc_stem else "data.jsonl")
                     self.text_area.delete("1.0", END)
                     if jsonl_path.exists():
                         lines = jsonl_path.read_text(encoding="utf-8").splitlines()[:50]
