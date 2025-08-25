@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# pdf2mm GUI runner script
+# pdf2ai GUI runner script
 # Author: Andre Lorbach <alorbach@adiscon.com>
 # Copyright (c) 2025 Andre Lorbach
 # License: MIT

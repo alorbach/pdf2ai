@@ -1,4 +1,4 @@
-## pdf2mm: PDF to multimodal corpus (text + images + OCR + captions + embeddings)
+## PDF2AI – PDF to AI-Ready Corpus Converter
 
 Compact, production-ready CLI that converts PDFs into AI-agent-friendly corpora. It extracts per-page text blocks with bounding boxes, exports images, runs optional OCR and image captioning, and builds optional embeddings for semantic search. Outputs JSONL by default, with optional YAML and Markdown summaries.
 
@@ -70,7 +70,7 @@ Environment variables go in `.env` (see `.env.example`).
 ### CLI
 
 ```bash
-python pdf2mm.py \
+python pdf2ai.py \
   --pdf path/to/file.pdf \
   --outdir out_dir \
   --format jsonl \
@@ -141,7 +141,7 @@ Notes:
 
 Validate code quality:
 ```bash
-python -m pyflakes pdf2mm.py
+python -m pyflakes pdf2ai.py
 ```
 
 See the full user guide (GPU setup, Azure config, GUI usage): [USER_GUIDE.md](USER_GUIDE.md)

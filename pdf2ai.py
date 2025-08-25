@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-pdf2mm - PDF to multimodal corpus converter
+PDF2AI – PDF to AI-Ready Corpus Converter
 A utility that converts PDF documents with images to AI-agent-friendly formats
 
 Author: Andre Lorbach <alorbach@adiscon.com>

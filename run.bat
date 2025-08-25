@@ -1,5 +1,5 @@
 @echo off
-REM pdf2mm runner script for Windows
+REM pdf2ai runner script for Windows
 REM Author: Andre Lorbach ^<alorbach@adiscon.com^>
 REM Copyright (c) 2025 Andre Lorbach
 REM License: MIT
@@ -39,7 +39,7 @@ if errorlevel 1 (
   echo        Windows: Install from https://github.com/oschwartz10612/poppler-windows 1>&2
 )
 
-python pdf2mm.py %*
+python pdf2ai.py %*
 
 popd
 endlocal

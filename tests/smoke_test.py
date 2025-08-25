@@ -1,5 +1,5 @@
 """
-Smoke tests for pdf2mm
+Smoke tests for PDF2AI
 
 Author: Andre Lorbach <alorbach@adiscon.com>
 Copyright (c) 2025 Andre Lorbach
@@ -38,7 +38,7 @@ def test_smoke(tmp_path: Path):
     outdir.mkdir(parents=True, exist_ok=True)
 
     env = os.environ.copy()
-    cmd = [sys.executable, str(root / "pdf2mm.py"), "--pdf", str(pdf), "--outdir", str(outdir), "--format", "jsonl", "--caption-provider", "none", "--embed-provider", "none"]
+    cmd = [sys.executable, str(root / "pdf2ai.py"), "--pdf", str(pdf), "--outdir", str(outdir), "--format", "jsonl", "--caption-provider", "none", "--embed-provider", "none"]
     proc = subprocess.run(cmd, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     assert proc.returncode == 0, proc.stderr
 

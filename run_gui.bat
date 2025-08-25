@@ -1,5 +1,5 @@
 @echo off
-REM pdf2mm GUI runner script for Windows
+REM pdf2ai GUI runner script for Windows
 REM Author: Andre Lorbach ^<alorbach@adiscon.com^>
 REM Copyright (c) 2025 Andre Lorbach
 REM License: MIT

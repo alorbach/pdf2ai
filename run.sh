@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# pdf2mm runner script
+# pdf2ai runner script
 # Author: Andre Lorbach <alorbach@adiscon.com>
 # Copyright (c) 2025 Andre Lorbach
 # License: MIT
@@ -42,5 +42,5 @@ if ! command -v pdftoppm >/dev/null 2>&1 && ! command -v pdftotext >/dev/null 2>
   echo "       macOS (brew):  brew install poppler" >&2
 fi
 
-python pdf2mm.py "$@"
+python pdf2ai.py "$@"
 

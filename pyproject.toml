@@ -1,5 +1,5 @@
 [project]
-name = "pdf2mm"
+name = "pdf2ai"
 version = "1.0.0"
 description = "PDF to multimodal corpus converter - Convert PDF documents with images to AI-agent-friendly formats"
 authors = [
@@ -45,12 +45,12 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/alorbach/pdf2mm"
-"Bug Tracker" = "https://github.com/alorbach/pdf2mm/issues"
+"Homepage" = "https://github.com/alorbach/pdf2ai"
+"Bug Tracker" = "https://github.com/alorbach/pdf2ai/issues"
 
 [project.scripts]
-pdf2mm = "pdf2mm:main"
-pdf2mm-gui = "gui:main"
+pdf2ai = "pdf2ai:main"
+pdf2ai-gui = "gui:main"
 
 [build-system]
 requires = ["setuptools>=61.0", "wheel"]
