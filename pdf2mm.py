@@ -129,6 +129,23 @@ def image_to_base64(pil_img: Image.Image) -> str:
     return f"data:image/png;base64,{data}"
 
 
+def _detect_devices() -> Tuple[Any, str]:
+    """Return (pipeline_device, st_device) for transformers and sentence-transformers.
+    pipeline_device: -1 for CPU, 0 for first CUDA GPU, or a torch.device("mps") for Apple.
+    st_device: "cpu"|"cuda"|"mps".
+    """
+    try:
+        import torch  # type: ignore
+
+        if torch.cuda.is_available():
+            return 0, "cuda"
+        if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+            return torch.device("mps"), "mps"
+    except Exception:
+        pass
+    return -1, "cpu"
+
+
 def generate_caption_openai(
     pil_img: Image.Image,
     model: str,
@@ -177,9 +194,16 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
     try:
         from transformers import pipeline  # lazy
 
+        pipeline_device, _ = _detect_devices()
+        if pipeline_device == -1:
+            logging.info("BLIP using CPU")
+        else:
+            logging.info("BLIP using GPU device=%s", pipeline_device)
+
         pipe = pipeline(
             task="image-to-text",
             model="Salesforce/blip-image-captioning-base",
+            device=pipeline_device,
         )
         outputs = pipe(pil_img)
         if not outputs:
@@ -428,7 +452,10 @@ def compute_embeddings_hf(texts: List[str], model_name: str) -> np.ndarray:
     try:
         from sentence_transformers import SentenceTransformer
 
-        model = SentenceTransformer(model_name)
+        _, st_device = _detect_devices()
+        if st_device != "cpu":
+            logging.info("sentence-transformers using device=%s", st_device)
+        model = SentenceTransformer(model_name, device=st_device)
         vecs = model.encode(texts, batch_size=64, show_progress_bar=False, convert_to_numpy=True, normalize_embeddings=False)
         return vecs.astype(np.float32)
     except Exception as exc:  # pragma: no cover - optional heavy dep
