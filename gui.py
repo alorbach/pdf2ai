@@ -8,6 +8,7 @@ import sys
 import threading
 from pathlib import Path
 from tkinter import BOTH, BOTTOM, END, LEFT, RIGHT, X, Y, Button, Checkbutton, E, Entry, Frame, IntVar, Label, Listbox, N, S, Scrollbar, StringVar, Tk, filedialog, ttk, Text
+import json as _json
 
 try:
     import fitz  # PyMuPDF
@@ -50,6 +51,7 @@ class App:
         self._build_controls()
         self._build_tabs()
         self._build_status()
+        self._load_settings()
 
         # Root should make notebook expand
         self.root.update_idletasks()
@@ -97,6 +99,8 @@ class App:
         self.run_btn.grid(row=6, column=1, pady=6, sticky="w")
         self.cancel_btn = ttk.Button(frm, text="Cancel", command=self.cancel_run, state="disabled")
         self.cancel_btn.grid(row=6, column=2, pady=6, sticky="w")
+        self.config_btn = ttk.Button(frm, text="Config…", command=self.edit_config)
+        self.config_btn.grid(row=6, column=3, pady=6, sticky="w")
 
         frm.grid_columnconfigure(1, weight=1)
         frm.grid_columnconfigure(3, weight=1)
@@ -152,6 +156,45 @@ class App:
         self.progress.pack(side=LEFT, fill=X, expand=True)
         self.status_label = ttk.Label(bar, text="Ready")
         self.status_label.pack(side=RIGHT)
+
+    def _settings_path(self) -> Path:
+        return Path.home() / ".pdf2mm_gui.json"
+
+    def _load_settings(self) -> None:
+        try:
+            p = self._settings_path()
+            if p.exists():
+                data = _json.loads(p.read_text(encoding="utf-8"))
+                self.pdf_path.set(data.get("pdf_path", ""))
+                self.out_dir.set(data.get("out_dir", ""))
+                self.format.set(data.get("format", "jsonl"))
+                self.ocr.set(data.get("ocr", "auto"))
+                self.caption_provider.set(data.get("caption_provider", "none"))
+                self.embed_provider.set(data.get("embed_provider", "none"))
+                self.max_pages.set(str(data.get("max_pages", "0")))
+                self.min_cap_len.set(str(data.get("min_cap_len", "6")))
+                self.lang.set(data.get("lang", "eng"))
+                self.config.set(data.get("config", ""))
+        except Exception:
+            pass
+
+    def _save_settings(self) -> None:
+        try:
+            data = {
+                "pdf_path": self.pdf_path.get(),
+                "out_dir": self.out_dir.get(),
+                "format": self.format.get(),
+                "ocr": self.ocr.get(),
+                "caption_provider": self.caption_provider.get(),
+                "embed_provider": self.embed_provider.get(),
+                "max_pages": self.max_pages.get(),
+                "min_cap_len": self.min_cap_len.get(),
+                "lang": self.lang.get(),
+                "config": self.config.get(),
+            }
+            self._settings_path().write_text(_json.dumps(data, indent=2), encoding="utf-8")
+        except Exception:
+            pass
 
     def browse_pdf(self) -> None:
         path = filedialog.askopenfilename(filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")])
@@ -355,10 +398,55 @@ class App:
         self.debug_area.insert(END, text)
         self.debug_area.see(END)
 
+    def edit_config(self) -> None:
+        # Open a simple JSON editor for OpenAI/Azure configuration
+        top = ttk.Toplevel(self.root)
+        top.title("Configuration (config.json)")
+        top.geometry("700x500")
+        txt = Text(top, wrap="none")
+        txt.pack(fill=BOTH, expand=True)
+
+        # Load current YAML and env-driven OpenAI config as JSON skeleton
+        cfg_path = Path(self.config.get()) if self.config.get() else None
+        initial = {
+            "openai": {
+                "api_key_env": "OPENAI_API_KEY",
+                "base_url": None,
+                "azure_use": False,
+                "azure_endpoint": None,
+                "azure_deployment": None,
+                "azure_embed_deployment": None,
+                "azure_api_version": "2024-02-15-preview",
+            }
+        }
+        try:
+            txt.insert(END, _json.dumps(initial, indent=2))
+        except Exception:
+            pass
+
+        btns = ttk.Frame(top)
+        btns.pack(fill=X)
+        def _save():
+            try:
+                obj = _json.loads(txt.get("1.0", END))
+                # Save next to selected config path or in project root as config.json
+                target = Path("configs/config.json")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(_json.dumps(obj, indent=2), encoding="utf-8")
+                self._append_debug(f"Saved config to {target}\n")
+            except Exception as exc:
+                self._append_debug(f"Failed to save config: {exc}\n")
+        ttk.Button(btns, text="Save", command=_save).pack(side=RIGHT, padx=8, pady=6)
+
+    def on_close(self) -> None:
+        self._save_settings()
+        self.root.destroy()
+
 
 def main() -> int:
     root = Tk()
-    App(root)
+    app = App(root)
+    root.protocol("WM_DELETE_WINDOW", app.on_close)
     root.mainloop()
     return 0
 

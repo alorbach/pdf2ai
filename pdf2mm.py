@@ -26,6 +26,12 @@ from tqdm import tqdm
 class OpenAIConfig(BaseModel):
     api_key_env: str = "OPENAI_API_KEY"
     base_url: Optional[str] = None
+    # Azure compatibility
+    azure_use: bool = False
+    azure_endpoint: Optional[str] = None  # e.g., https://<resource>.openai.azure.com
+    azure_deployment: Optional[str] = None  # chat/caption deployment name
+    azure_embed_deployment: Optional[str] = None  # embeddings deployment name
+    azure_api_version: str = "2024-02-15-preview"
 
 
 class RuntimeConfig(BaseModel):
@@ -150,13 +156,20 @@ def generate_caption_openai(
     pil_img: Image.Image,
     model: str,
     api_key: str,
-    base_url: Optional[str],
+    openai_cfg: OpenAIConfig,
 ) -> Optional[str]:
     try:
         import requests  # lazy
-
-        url = (base_url or "https://api.openai.com/v1") + "/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        if openai_cfg.azure_use and openai_cfg.azure_endpoint and openai_cfg.azure_deployment:
+            url = (
+                f"{openai_cfg.azure_endpoint}/openai/deployments/{openai_cfg.azure_deployment}/chat/completions"
+                f"?api-version={openai_cfg.azure_api_version}"
+            )
+            headers = {"api-key": api_key, "Content-Type": "application/json"}
+        else:
+            base_url = openai_cfg.base_url or "https://api.openai.com/v1"
+            url = base_url + "/chat/completions"
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
         b64 = image_to_base64(pil_img)
         prompt = (
             "Provide one short, factual caption (<= 160 chars). "
@@ -368,7 +381,7 @@ def extract_page(
             if caption_provider == "openai":
                 api_key = os.getenv(openai_cfg.api_key_env, "")
                 if api_key:
-                    caption = generate_caption_openai(pil_img, caption_model, api_key, openai_cfg.base_url)
+                    caption = generate_caption_openai(pil_img, caption_model, api_key, openai_cfg)
                 else:  # pragma: no cover - env may be missing in CI
                     logging.warning("OPENAI API key not set; skipping captions")
             elif caption_provider == "blip":
