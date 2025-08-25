@@ -268,13 +268,20 @@ class App:
                     env=env,
                 )
 
-                def reader(stream, prefix):
-                    for line in iter(stream.readline, ""):
-                        self.root.after(0, lambda ln=line: self._append_debug(prefix + ln))
-                    stream.close()
+                stdout_buf: list[str] = []
+                stderr_buf: list[str] = []
 
-                t_out = threading.Thread(target=reader, args=(self.proc.stdout, ""), daemon=True)
-                t_err = threading.Thread(target=reader, args=(self.proc.stderr, ""), daemon=True)
+                def reader(stream, prefix, store):
+                    for line in iter(stream.readline, ""):
+                        store.append(line)
+                        self.root.after(0, lambda ln=line: self._append_debug(prefix + ln))
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+                t_out = threading.Thread(target=reader, args=(self.proc.stdout, "", stdout_buf), daemon=True)
+                t_err = threading.Thread(target=reader, args=(self.proc.stderr, "", stderr_buf), daemon=True)
                 t_out.start(); t_err.start()
                 ret = self.proc.wait()
                 t_out.join(timeout=0.2); t_err.join(timeout=0.2)
@@ -297,7 +304,8 @@ class App:
                             except Exception:
                                 self.text_area.insert(END, ln + "\n")
                     else:
-                        self.text_area.insert(END, stderr or stdout or "No output produced")
+                        fallback = "".join(stderr_buf) or "".join(stdout_buf) or "No output produced"
+                        self.text_area.insert(END, fallback)
                     self.status_label.config(text=f"Done (exit {ret})")
                     # Show full progress bar when finished
                     self.progress.stop()
