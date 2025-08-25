@@ -3,6 +3,15 @@ setlocal
 
 pushd "%~dp0"
 
+REM Use current active venv if present
+if defined VIRTUAL_ENV (
+  echo [info] Using active venv: %VIRTUAL_ENV%
+  python -m pip install --upgrade pip >nul
+  pip install -r requirements.txt
+  python gui.py %*
+  goto :END
+)
+
 if not exist .venv (
   echo [setup] Creating virtual environment at .venv
   call :MAKE_VENV
