@@ -23,6 +23,7 @@ class App:
         self.root = root
         root.title(APP_TITLE)
         root.geometry("1000x720")
+        root.minsize(900, 600)
         # Theme and basic styling
         self.style = ttk.Style()
         themes = set(self.style.theme_names())
@@ -52,6 +53,7 @@ class App:
 
         # Root should make notebook expand
         self.root.update_idletasks()
+        self.nb.select(0)
 
     def _build_controls(self) -> None:
         frm = ttk.LabelFrame(self.root, text="Options")
@@ -103,6 +105,17 @@ class App:
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill=BOTH, expand=True)
 
+        # Debug tab (default)
+        self.tab_debug = ttk.Frame(self.nb)
+        self.nb.add(self.tab_debug, text="Debug")
+        self.tab_debug.rowconfigure(0, weight=1)
+        self.tab_debug.columnconfigure(0, weight=1)
+        self.debug_area = Text(self.tab_debug, wrap="none")
+        self.debug_area.grid(row=0, column=0, sticky="nsew")
+        dbg_y = ttk.Scrollbar(self.tab_debug, orient="vertical", command=self.debug_area.yview)
+        dbg_y.grid(row=0, column=1, sticky="ns")
+        self.debug_area.configure(yscrollcommand=dbg_y.set)
+
         # PDF preview
         self.tab_pdf = ttk.Frame(self.nb)
         self.nb.add(self.tab_pdf, text="PDF Preview")
@@ -118,6 +131,8 @@ class App:
         self.preview_list.bind("<<ListboxSelect>>", self.on_page_select)
         self.canvas = ttk.Label(self.tab_pdf)
         self.canvas.grid(row=0, column=2, sticky="nsew")
+        self.canvas.bind("<Configure>", self._rescale_current_page)
+        self.current_page_idx = None
 
         # Text preview
         self.tab_text = ttk.Frame(self.nb)
@@ -183,12 +198,27 @@ class App:
         sel = self.preview_list.curselection()
         if not sel:
             return
-        page_idx = sel[0]
-        page = self.doc.load_page(page_idx)
-        pix = page.get_pixmap(matrix=fitz.Matrix(1.25, 1.25))
-        # Convert to Tk photo image via PIL to support alpha
-        from PIL import Image, ImageTk  # lazy
+        self.current_page_idx = sel[0]
+        self._render_page_to_canvas()
 
+    def _rescale_current_page(self, event=None) -> None:
+        # Re-render on canvas resize
+        if self.current_page_idx is not None:
+            self._render_page_to_canvas()
+
+    def _render_page_to_canvas(self) -> None:
+        if not hasattr(self, "doc") or self.current_page_idx is None:
+            return
+        page = self.doc.load_page(self.current_page_idx)
+        # Determine zoom to fit canvas area
+        canvas_w = max(self.canvas.winfo_width(), 200)
+        canvas_h = max(self.canvas.winfo_height(), 200)
+        rect = page.rect
+        zx = canvas_w / max(rect.width, 1)
+        zy = canvas_h / max(rect.height, 1)
+        zoom = max(0.5, min(zx, zy))
+        pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom))
+        from PIL import Image, ImageTk  # lazy
         img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
         self.tk_img = ImageTk.PhotoImage(img)
         self.canvas.configure(image=self.tk_img)
@@ -225,9 +255,29 @@ class App:
             try:
                 self.set_running(True)
                 self.status_label.config(text="Processing…")
+                self.progress.configure(mode="indeterminate")
                 self.progress.start(10)
-                self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                stdout, stderr = self.proc.communicate()
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    env=env,
+                )
+
+                def reader(stream, prefix):
+                    for line in iter(stream.readline, ""):
+                        self.root.after(0, lambda ln=line: self._append_debug(prefix + ln))
+                    stream.close()
+
+                t_out = threading.Thread(target=reader, args=(self.proc.stdout, ""), daemon=True)
+                t_err = threading.Thread(target=reader, args=(self.proc.stderr, ""), daemon=True)
+                t_out.start(); t_err.start()
+                ret = self.proc.wait()
+                t_out.join(timeout=0.2); t_err.join(timeout=0.2)
 
                 def _update_preview():
                     # Load output preview (first few JSONL rows)
@@ -248,7 +298,10 @@ class App:
                                 self.text_area.insert(END, ln + "\n")
                     else:
                         self.text_area.insert(END, stderr or stdout or "No output produced")
-                    self.status_label.config(text="Done")
+                    self.status_label.config(text=f"Done (exit {ret})")
+                    # Show full progress bar when finished
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", maximum=100, value=100)
 
                 self.root.after(0, _update_preview)
             except Exception as exc:  # pragma: no cover
@@ -266,7 +319,10 @@ class App:
         self.cancel_btn.config(state="normal" if running else "disabled")
 
     def _stop_running(self) -> None:
-        self.progress.stop()
+        try:
+            self.progress.stop()
+        except Exception:
+            pass
         self.set_running(False)
         self.proc = None
 
@@ -281,6 +337,15 @@ class App:
             except Exception:
                 pass
             self.status_label.config(text="Canceled")
+            try:
+                self.progress.stop()
+                self.progress.configure(mode="determinate", maximum=100, value=0)
+            except Exception:
+                pass
+
+    def _append_debug(self, text: str) -> None:
+        self.debug_area.insert(END, text)
+        self.debug_area.see(END)
 
 
 def main() -> int:

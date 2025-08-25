@@ -503,6 +503,9 @@ def main() -> int:
     dirs = ensure_out_dirs(out_dir)
     want_yaml, want_md = maybe_secondary_outputs(args.format)
 
+    logging.info("Args: pdf=%s outdir=%s format=%s ocr=%s caption=%s embed=%s max_pages=%s lang=%s config=%s",
+                 pdf_path, out_dir, args.format, args.ocr, args.caption_provider, args.embed_provider, args.max_pages, args.lang, args.config)
+
     if not pdf_path.exists():
         logging.error("PDF not found: %s", pdf_path)
         return 2
@@ -522,6 +525,7 @@ def main() -> int:
 
     logging.info("Processing %s pages", max_pages)
     for page_idx in tqdm(range(min(max_pages, doc.page_count)), disable=args.quiet):
+        logging.info("Page %d", page_idx + 1)
         page_rows, page_embeds = extract_page(
             doc=doc,
             page_index_zero=page_idx,
@@ -551,6 +555,7 @@ def main() -> int:
 
     vectors: np.ndarray = np.zeros((0, 0), dtype=np.float32)
     if embedding_texts and cfg.embed_provider != "none":
+        logging.info("Computing embeddings with provider=%s model=%s", cfg.embed_provider, cfg.embed_model)
         if cfg.embed_provider == "openai":
             api_key = os.getenv(cfg.openai.api_key_env, "")
             if not api_key:  # pragma: no cover - env may be missing in CI
