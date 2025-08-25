@@ -262,19 +262,27 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
                 )
             except Exception as exc:
                 msg = str(exc)
-                if "does not appear to have a file named model.safetensors" in msg:
-                    logging.info("BLIP model has no safetensors; retrying with use_safetensors=False")
+                try:
+                    if "does not appear to have a file named model.safetensors" in msg:
+                        logging.info("BLIP model has no safetensors; retrying with use_safetensors=False")
+                        _BLIP_PIPELINE = pipeline(
+                            task="image-to-text",
+                            model=model_name,
+                            device=pipeline_device,
+                            image_processor=image_processor,
+                            model_kwargs={**model_kwargs, "use_safetensors": False},
+                        )
+                    else:
+                        raise
+                except Exception:
+                    # Final fallback to a caption model with good safetensors support
+                    fallback_model = os.getenv("PDF2MM_CAP_FALLBACK", "microsoft/git-base")
+                    logging.warning("Falling back to caption model: %s", fallback_model)
                     _BLIP_PIPELINE = pipeline(
                         task="image-to-text",
-                        model=model_name,
+                        model=fallback_model,
                         device=pipeline_device,
-                        image_processor=image_processor,
-                        model_kwargs={**model_kwargs, "use_safetensors": False},
                     )
-                else:
-                    if "torch to at least v2.6" in msg:
-                        logging.warning("Your torch version is too old for this model format. Please upgrade torch >= 2.6 or choose a model with safetensors. You can set PDF2MM_BLIP_MODEL to another caption model.")
-                    raise
 
         outputs = _BLIP_PIPELINE(img)
         if not outputs:
