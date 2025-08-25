@@ -22,6 +22,12 @@ Windows:
 run.bat --pdf .\samples\sample.pdf --outdir out --format yaml --caption-provider openai --embed-provider none
 ```
 
+GUI (optional, Tkinter):
+```bash
+python gui.py
+```
+Select a PDF, configure options, preview PDF pages and output text, then click Run.
+
 ### Install system dependencies
 
 - **Tesseract OCR** (optional, for `--ocr auto|yes`)

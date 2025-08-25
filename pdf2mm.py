@@ -444,7 +444,10 @@ def write_embeddings(out_dir: Path, ids: List[str], vectors: np.ndarray) -> None
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Convert PDFs into a multimodal corpus (text + images + OCR + captions + embeddings)")
+    p = argparse.ArgumentParser(
+        description="Convert PDFs into a multimodal corpus (text + images + OCR + captions + embeddings)",
+        add_help=True,
+    )
     p.add_argument("--pdf", required=True, help="Path to PDF file")
     p.add_argument("--outdir", required=True, help="Output directory")
     p.add_argument("--format", default="jsonl", choices=["jsonl", "yaml", "markdown", "md"], help="Secondary output format (JSONL always produced)")
@@ -456,6 +459,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lang", default=None, help="Language code for OCR (e.g., eng, deu)")
     p.add_argument("--config", default=None, help="YAML config path")
     p.add_argument("--quiet", action="store_true", help="Reduce verbosity")
+    # If started without arguments, print help and exit gracefully
+    if len(sys.argv) == 1:
+        p.print_help(sys.stderr)
+        sys.exit(1)
     return p.parse_args()
 
 
