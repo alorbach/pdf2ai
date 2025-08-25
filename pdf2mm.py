@@ -735,7 +735,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--pdf", required=True, help="Path to PDF file")
     p.add_argument("--outdir", required=True, help="Output directory")
-    p.add_argument("--format", default="jsonl", choices=["jsonl", "yaml", "markdown", "md"], help="Secondary output format (JSONL always produced)")
+    p.add_argument("--format", default=None, choices=["jsonl", "yaml", "markdown", "md"], help="[deprecated] Ignored; all formats are always produced")
     p.add_argument("--ocr", default="auto", choices=["auto", "yes", "no"], help="OCR mode for images")
     p.add_argument("--caption-provider", default="none", choices=["openai", "blip", "none"], help="Image captioning provider")
     p.add_argument("--embed-provider", default="none", choices=["openai", "hf", "none"], help="Embedding provider")
@@ -790,7 +790,10 @@ def main() -> int:
     out_dir = Path(args.outdir)
     out_dir.mkdir(parents=True, exist_ok=True)
     dirs = ensure_out_dirs(out_dir)
-    want_yaml, want_md = maybe_secondary_outputs(args.format)
+    # Always produce all formats (JSONL, YAML, Markdown). --format is ignored.
+    if args.format:
+        logging.info("--format is deprecated; all formats are always written.")
+    want_yaml, want_md = True, True
 
     logging.info("Args: pdf=%s outdir=%s format=%s ocr=%s caption=%s embed=%s max_pages=%s lang=%s config=%s",
                  pdf_path, out_dir, args.format, args.ocr, args.caption_provider, args.embed_provider, args.max_pages, args.lang, args.config)
