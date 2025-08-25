@@ -1,4 +1,19 @@
 #!/usr/bin/env python
+"""
+PDF2AI – PDF to AI-Ready Corpus Converter (GUI)
+A graphical user interface for the PDF2AI utility
+
+Author: Andre Lorbach <alorbach@adiscon.com>
+Copyright (c) 2025 Andre Lorbach
+Software Developer since 1999
+
+This code was created using AI Agent Models and human code oversight.
+
+The goal is to create a utility that can convert PDF Documents with images 
+to a better understandable version, suited to work better for AI Agent Tasks.
+
+License: MIT
+"""
 from __future__ import annotations
 
 import json
@@ -16,7 +31,7 @@ except Exception:  # pragma: no cover
     fitz = None
 
 
-APP_TITLE = "pdf2mm Studio"
+APP_TITLE = "PDF2AI Studio"
 
 
 class App:
@@ -157,7 +172,7 @@ class App:
         self.status_label.pack(side=RIGHT)
 
     def _settings_path(self) -> Path:
-        return Path.home() / ".pdf2mm_gui.json"
+        return Path.home() / ".pdf2ai_gui.json"
 
     def _load_settings(self) -> None:
         try:
@@ -267,7 +282,7 @@ class App:
 
     def run_pipeline(self) -> None:
         # assemble args
-        cmd = [sys.executable, str(Path(__file__).with_name("pdf2mm.py"))]
+        cmd = [sys.executable, str(Path(__file__).with_name("pdf2ai.py"))]
         if self.pdf_path.get():
             cmd += ["--pdf", self.pdf_path.get()]
         # Default outdir to PDF folder + /out if not set

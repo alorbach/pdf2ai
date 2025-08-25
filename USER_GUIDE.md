@@ -1,7 +1,7 @@
-## User Guide: pdf2mm
+## User Guide: PDF2AI – PDF to AI-Ready Corpus Converter
 
 ### Overview
-pdf2mm converts PDFs into an AI-agent friendly corpus. It extracts per-page text blocks, images, OCR text, concise image captions, optional vision summaries, and embeddings. Use the JSONL for programmatic agents; Markdown is for human review.
+PDF2AI converts PDFs into an AI-agent friendly corpus. It extracts per-page text blocks, images, OCR text, concise image captions, optional vision summaries, and embeddings. Use the JSONL for programmatic agents; Markdown is for human review.
 
 ### Installation
 1) Create venv and install deps
@@ -38,7 +38,7 @@ Notes:
 ### Running
 CLI example:
 ```bash
-python pdf2mm.py \
+python pdf2ai.py \
   --pdf path/to/file.pdf \
   --outdir out \
   --format jsonl \
