@@ -28,6 +28,10 @@ python gui.py
 ```
 Select a PDF, configure options, preview PDF pages and output text, then click Run.
 
+Starters:
+- POSIX: `./run_gui.sh`
+- Windows: `run_gui.bat`
+
 ### Install system dependencies
 
 - **Tesseract OCR** (optional, for `--ocr auto|yes`)
