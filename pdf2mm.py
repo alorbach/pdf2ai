@@ -139,6 +139,10 @@ def image_to_base64(pil_img: Image.Image) -> str:
     return f"data:image/png;base64,{data}"
 
 
+# Cache for heavy models
+_BLIP_PIPELINE = None  # type: ignore
+
+
 def _detect_devices() -> Tuple[Any, str]:
     """Return (pipeline_device, st_device) for transformers and sentence-transformers.
     pipeline_device: -1 for CPU, 0 for first CUDA GPU, or a torch.device("mps") for Apple.
@@ -209,7 +213,18 @@ def generate_caption_openai(
 
 def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
     try:
+        global _BLIP_PIPELINE
         from transformers import pipeline  # lazy
+        model_name = "Salesforce/blip-image-captioning-base"
+
+        # Downscale very large images for speed
+        img = pil_img.copy()
+        try:
+            max_side = 1024
+            if max(img.size) > max_side:
+                img.thumbnail((max_side, max_side))
+        except Exception:
+            img = pil_img
 
         pipeline_device, _ = _detect_devices()
         if pipeline_device == -1:
@@ -217,12 +232,35 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
         else:
             logging.info("BLIP using GPU device=%s", pipeline_device)
 
-        pipe = pipeline(
-            task="image-to-text",
-            model="Salesforce/blip-image-captioning-base",
-            device=pipeline_device,
-        )
-        outputs = pipe(pil_img)
+        if _BLIP_PIPELINE is None:
+            model_kwargs = {}
+            try:
+                import torch  # type: ignore
+                if pipeline_device != -1:
+                    model_kwargs["torch_dtype"] = torch.float16
+            except Exception:
+                pass
+
+            image_processor = None
+            try:
+                from transformers import AutoImageProcessor  # type: ignore
+                image_processor = AutoImageProcessor.from_pretrained(model_name, use_fast=True)
+            except Exception:
+                try:
+                    from transformers import AutoProcessor  # type: ignore
+                    image_processor = AutoProcessor.from_pretrained(model_name)
+                except Exception:
+                    image_processor = None
+
+            _BLIP_PIPELINE = pipeline(
+                task="image-to-text",
+                model=model_name,
+                device=pipeline_device,
+                image_processor=image_processor,
+                model_kwargs=model_kwargs,
+            )
+
+        outputs = _BLIP_PIPELINE(img)
         if not outputs:
             return None
         text = outputs[0].get("generated_text") or outputs[0].get("text")
