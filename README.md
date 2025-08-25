@@ -9,6 +9,7 @@ Compact, production-ready CLI that converts PDFs into AI-agent-friendly corpora.
 - **Captions**: OpenAI (remote) or BLIP (local transformers) with short factual sentences.
 - **Embeddings**: OpenAI or sentence-transformers (`all-MiniLM-L6-v2`).
 - **Deterministic IDs**: Stable `embedding_id` ordering.
+- **AI Agent Optimization**: Structured output formats optimized for programmatic processing.
 
 ### Quickstart
 
@@ -114,6 +115,44 @@ JSONL schema per row:
   "caption": "short factual caption|null",
   "embedding_id": "e_000123|null"
 }
+```
+
+### AI Agent Usage Guide
+
+**Best Practices for AI Agent Integration:**
+
+1. **JSONL Format (Recommended)**: Use for programmatic processing and semantic search
+   - Structured data with semantic sections
+   - Embedding IDs for vector search
+   - Bounding box coordinates for spatial analysis
+
+2. **YAML Format**: Use for configuration and structured data extraction
+   - Hierarchical document structure
+   - Easy parsing for rule-based systems
+
+3. **Markdown Format**: Use for human review and documentation
+   - Readable summaries
+   - Section-based navigation
+
+**Example AI Agent Workflow:**
+```python
+import json
+
+# Load JSONL for semantic search
+with open('out/document.jsonl', 'r') as f:
+    for line in f:
+        row = json.loads(line)
+        if row['section'] == 'target_section':
+            # Process specific section
+            process_section(row['text'])
+```
+
+**Semantic Search Example:**
+```python
+# Use embedding_id for vector similarity search
+embedding_id = "e_000123"
+# Query vector database for similar content
+similar_content = vector_db.search(embedding_id)
 ```
 
 Notes:
