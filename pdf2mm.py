@@ -215,7 +215,7 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
     try:
         global _BLIP_PIPELINE
         from transformers import pipeline  # lazy
-        model_name = "Salesforce/blip-image-captioning-base"
+        model_name = os.getenv("PDF2MM_BLIP_MODEL", "Salesforce/blip-image-captioning-base")
 
         # Downscale very large images for speed
         img = pil_img.copy()
@@ -233,7 +233,7 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
             logging.info("BLIP using GPU device=%s", pipeline_device)
 
         if _BLIP_PIPELINE is None:
-            model_kwargs = {}
+            model_kwargs = {"use_safetensors": True}
             try:
                 import torch  # type: ignore
                 if pipeline_device != -1:
@@ -252,13 +252,18 @@ def generate_caption_blip(pil_img: Image.Image) -> Optional[str]:
                 except Exception:
                     image_processor = None
 
-            _BLIP_PIPELINE = pipeline(
-                task="image-to-text",
-                model=model_name,
-                device=pipeline_device,
-                image_processor=image_processor,
-                model_kwargs=model_kwargs,
-            )
+            try:
+                _BLIP_PIPELINE = pipeline(
+                    task="image-to-text",
+                    model=model_name,
+                    device=pipeline_device,
+                    image_processor=image_processor,
+                    model_kwargs=model_kwargs,
+                )
+            except Exception as exc:
+                if "torch to at least v2.6" in str(exc):
+                    logging.warning("Your torch version is too old for this model format. Please upgrade torch >= 2.6 or choose a model with safetensors. You can set PDF2MM_BLIP_MODEL to another caption model.")
+                raise
 
         outputs = _BLIP_PIPELINE(img)
         if not outputs:
